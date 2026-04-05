@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Portfolio Intelligence</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <div class="container">
+
+    <!-- Header -->
+    <div class="header">
+      <div>
+        <div class="header-title">Portfolio Intelligence</div>
+        <div class="header-subtitle">LLM-powered analysis &middot; Inspired by Performativ</div>
+      </div>
+      <div class="badge">Proof of concept</div>
+    </div>
+
+    <!-- Input card -->
+    <div class="card">
+      <div class="section-label">Input — Portfolio</div>
+      <div id="positions-list"></div>
+      <div class="add-row">
+        <button class="btn-add" id="btn-add-position">+ Add position...</button>
+        <input class="weight-input" id="new-weight" type="number" min="0" max="100" placeholder="%" />
+        <span class="weight-suffix">%</span>
+        <button class="btn-remove" id="btn-add-confirm">Add</button>
+      </div>
+      <div class="analyze-row">
+        <span class="allocation-hint" id="alloc-hint"></span>
+        <button class="btn-analyze" id="btn-analyze">
+          Analyze portfolio &#x2197;
+        </button>
+      </div>
+    </div>
+
+    <!-- Loading -->
+    <div id="loading" class="card hidden">
+      <div class="loading-box">
+        <div class="spinner"></div>
+        <div>Fetching prices &amp; analyzing with GPT-4o-mini...</div>
+      </div>
+    </div>
+
+    <!-- Error -->
+    <div id="error-box" class="error-box hidden"></div>
+
+    <!-- Results -->
+    <div id="results" class="hidden">
+
+      <!-- Metrics -->
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-label">Positions</div>
+          <div class="metric-value" id="m-count">—</div>
+          <div class="metric-sub" id="m-alloc">—</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Risk Profile</div>
+          <div class="metric-value" id="m-risk">—</div>
+          <div class="metric-sub" id="m-risk-vol">—</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Sector Concentration</div>
+          <div class="metric-value" id="m-conc-value">—</div>
+          <div class="metric-sub" id="m-conc-label">—</div>
+        </div>
+      </div>
+
+      <!-- Content row: positions (left) + charts (right) -->
+      <div class="content-row">
+        <div class="card">
+          <div class="section-label">Position Analysis</div>
+          <div class="position-scroll" id="position-results"></div>
+        </div>
+        <div class="card">
+          <div class="chart-title">Sector</div>
+          <div id="sector-bars"></div>
+          <hr class="charts-divider" />
+          <div class="chart-title">Geography</div>
+          <div id="geo-bars"></div>
+        </div>
+      </div>
+
+      <!-- Correlation Analysis -->
+      <div class="card" id="corr-card">
+        <div class="section-label">Correlation Analysis</div>
+        <div class="corr-header">
+          <span class="corr-sub-label">High Correlation Pairs</span>
+          <span class="corr-flag-badge hidden" id="corr-flag-count"></span>
+        </div>
+        <div id="corr-flagged"></div>
+        <div id="corr-more-section" class="hidden">
+          <button class="corr-toggle" id="corr-toggle">&#9660; Show more pairs</button>
+          <div id="corr-more" class="hidden"></div>
+        </div>
+        <hr class="corr-divider" />
+        <div class="corr-sub-label">Look Up Pair Correlation</div>
+        <div class="corr-lookup-row">
+          <div class="autocomplete-wrapper">
+            <input class="position-input" id="lookup-a" type="text" placeholder="Stock 1" />
+          </div>
+          <div class="autocomplete-wrapper">
+            <input class="position-input" id="lookup-b" type="text" placeholder="Stock 2" />
+          </div>
+          <button class="btn-analyze" id="btn-lookup">Look up &#x2192;</button>
+        </div>
+        <div id="lookup-result"></div>
+      </div>
+
+      <!-- LLM Recommendation + Correlation Note -->
+      <div class="card">
+        <div class="section-label">LLM Recommendation</div>
+        <div class="rec-title" id="rec-title"></div>
+        <div class="rec-text" id="rec-text"></div>
+        <hr class="rec-divider" />
+        <div class="section-label">Correlation Note</div>
+        <div class="rec-text" id="corr-note"></div>
+      </div>
+
+    </div><!-- /results -->
+
+  </div>
+
+  <script>
+    // ═══════════════════════════════════════════════════════════════
+    // Frontend script — single-file vanilla JS, no bundler.
+    //
+    // Flow:
+    //   1. State: `positions[]` array + `lastCorrelations[]` for the lookup button.
+    //   2. Input rendering: renderPositions() rebuilds the position rows from state.
+    //   3. analyze(): POSTs to /analyze, calls renderResults() on success.
+    //   4. renderResults(): populates metrics, position pills, sector/geo bars,
+    //      correlation rows, and the LLM recommendation text.
+    //   5. Correlation helpers: corrRowHTML() builds each row; renderCorrelations()
+    //      splits pairs into flagged (High/Very high) vs collapsible rest.
+    //   6. lookupCorr(): searches lastCorrelations for a typed-in pair.
+    // ═══════════════════════════════════════════════════════════════
+
+    // ── State ──
+    // positions is loaded from localStorage on startup; falls back to defaults.
+    const DEFAULT_POSITIONS = [
+      { label: 'AAPL — Apple Inc.', weight: 20 },
+      { label: 'MSFT — Microsoft', weight: 25 },
+      { label: 'ASML — ASML Holding N.V.', weight: 30 },
+      { label: 'SHEL — Shell PLC', weight: 10 },
+      { label: 'TSLA — Tesla Inc.', weight: 5 },
+      { label: 'TSM — Taiwan Semiconductor Manufacturing Company Limited', weight: 10 },
+    ];
+    let positions = (() => {
+      try { return JSON.parse(localStorage.getItem('pi_positions')) || DEFAULT_POSITIONS; } // localStorage keeps the value even through refreshes
+      catch { return DEFAULT_POSITIONS; }
+    })();
+    let lastCorrelations = [];
+
+    function savePositions() {
+      try { localStorage.setItem('pi_positions', JSON.stringify(positions)); } catch { // quota exceeded — ignore  
+      }
+    }
+
+    // ── Input rendering ──
+    // Rebuilds the DOM position rows from the positions[] array.
+    // Uses DOM creation (not innerHTML) for the position input so attachAutocomplete
+    // can reference the element directly without a querySelector round-trip.
+    function renderPositions() {
+      const list = document.getElementById('positions-list');
+      list.innerHTML = '';
+      positions.forEach((p, i) => {
+        const row = document.createElement('div');
+        row.className = 'position-row';
+
+        // Autocomplete wrapper → needed for absolute dropdown positioning
+        const wrapper = document.createElement('div');
+        wrapper.className = 'autocomplete-wrapper';
+
+        const posInput = document.createElement('input');
+        posInput.className = 'position-input';
+        posInput.type = 'text';
+        posInput.value = p.label;
+        posInput.placeholder = 'Insert Stock';
+        posInput.addEventListener('input', () => { positions[i].label = posInput.value; updateAllocHint(); savePositions(); });
+        wrapper.appendChild(posInput);
+
+        // Calls Yahoo Finance /search for live ticker suggestions - smart search
+        attachAutocomplete(posInput, async (q) => {
+          try {
+            const r = await fetch(`/search?q=${encodeURIComponent(q)}`);
+            return r.ok ? r.json() : [];
+          } catch { return []; }
+        });
+
+        const weightInput = document.createElement('input');
+        weightInput.className = 'weight-input';
+        weightInput.type = 'number';
+        weightInput.value = p.weight;
+        weightInput.min = 0;
+        weightInput.max = 100;
+        weightInput.addEventListener('input', () => { positions[i].weight = parseFloat(weightInput.value) || 0; updateAllocHint(); savePositions(); });
+
+        const suffix = document.createElement('span');
+        suffix.className = 'weight-suffix';
+        suffix.textContent = '%';
+
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'btn-remove';
+        removeBtn.textContent = 'Remove';
+        removeBtn.addEventListener('click', () => removePosition(i));
+
+        row.append(wrapper, weightInput, suffix, removeBtn);
+        list.appendChild(row);
+      });
+      updateAllocHint();
+    }
+
+    // ── Autocomplete engine ──
+    // Attaches a dropdown to any input. fetchFn(query) → Promise<[{ticker, name}]>.
+    // Works for both the Yahoo Finance search (position inputs) and the portfolio-only
+    // filter (lookup inputs). The dropdown is appended to input.parentElement which must
+    // be .autocomplete-wrapper (position: relative).
+    function attachAutocomplete(input, fetchFn) {
+      const wrapper = input.parentElement;
+      let dropdown = null;
+      let activeIdx = -1;
+      let debounceTimer;
+
+      function openDropdown(items) {
+        closeDropdown();
+        if (!items.length) return;
+        dropdown = document.createElement('div');
+        dropdown.className = 'autocomplete-dropdown';
+        items.forEach(item => {
+          const el = document.createElement('div');
+          el.className = 'autocomplete-item';
+          const tickerSpan = document.createElement('span');
+          tickerSpan.className = 'autocomplete-item-ticker';
+          tickerSpan.textContent = item.ticker;
+          el.appendChild(tickerSpan);
+          if (item.name) {
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'autocomplete-item-name';
+            nameSpan.textContent = item.name;
+            el.appendChild(nameSpan);
+          }
+          // mousedown fires before blur — e.preventDefault() keeps focus so blur
+          // doesn't close the dropdown before the selection registers
+          el.addEventListener('mousedown', e => {
+            e.preventDefault();
+            input.value = item.name ? `${item.ticker} — ${item.name}` : item.ticker;
+            input.dispatchEvent(new Event('input')); // sync back to positions[i].label
+            closeDropdown();
+          });
+          dropdown.appendChild(el);
+        });
+        wrapper.appendChild(dropdown);
+        activeIdx = -1;
+      }
+
+      function closeDropdown() {
+        if (dropdown) { dropdown.remove(); dropdown = null; }
+        activeIdx = -1;
+      }
+
+      function setActive(idx) {
+        if (!dropdown) return;
+        dropdown.querySelectorAll('.autocomplete-item')
+          .forEach((el, i) => el.classList.toggle('active', i === idx));
+        activeIdx = idx;
+      }
+
+      input.addEventListener('input', () => {
+        const val = input.value.trim();
+        // Skip search if already formatted as "TICKER — Name" or too short
+        if (val.includes('—') || val.length < 2) { closeDropdown(); return; }
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(async () => openDropdown(await fetchFn(val)), 300);
+      });
+
+      input.addEventListener('keydown', e => {
+        if (!dropdown) return;
+        const items = dropdown.querySelectorAll('.autocomplete-item');
+        if (e.key === 'ArrowDown') { e.preventDefault(); setActive(Math.min(activeIdx + 1, items.length - 1)); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(Math.max(activeIdx - 1, 0)); }
+        else if (e.key === 'Enter' && activeIdx >= 0) { e.preventDefault(); items[activeIdx].dispatchEvent(new MouseEvent('mousedown')); }
+        else if (e.key === 'Escape') { closeDropdown(); }
+      });
+
+      // 150ms delay lets mousedown on a dropdown item fire before blur closes it
+      input.addEventListener('blur', () => setTimeout(closeDropdown, 150));
+    }
+
+    // Portfolio-only search for the lookup inputs: filters tickers already in
+    // lastCorrelations (i.e. the stocks the investor actually analyzed).
+    // No network call — purely client-side filter of the current analysis result.
+    function portfolioSearch(q) {
+      const tickers = [...new Set(lastCorrelations.flatMap(c => c.pair))];
+      const upper = q.toUpperCase();
+      return Promise.resolve(
+        tickers
+          .filter(t => t.includes(upper))
+          .map(t => {
+            const pos = positions.find(p => parsePosition(p.label).ticker.toUpperCase() === t);
+            return { ticker: t, name: pos ? parsePosition(pos.label).name : '' };
+          })
+      );
+    }
+
+    function addPosition() {
+      const weightEl = document.getElementById('new-weight');
+      positions.push({ label: '', weight: parseFloat(weightEl.value) || 0 });
+      weightEl.value = '';
+      savePositions();
+      renderPositions();
+      document.querySelectorAll('#positions-list .position-input')[positions.length - 1]?.focus();
+    }
+
+    function removePosition(i) {
+      positions.splice(i, 1);
+      savePositions();
+      renderPositions();
+    }
+
+    function updateAllocHint() {
+      const total = positions.reduce((s, p) => s + (parseFloat(p.weight) || 0), 0);
+      const hint = document.getElementById('alloc-hint');
+      hint.textContent = `${total}% allocated`;
+      hint.className = 'allocation-hint' + (total > 100 ? ' over' : '');
+    }
+
+    function parsePosition(label) {
+      const parts = label.split('—').map(s => s.trim());
+      return parts.length >= 2
+        ? { ticker: parts[0], name: parts.slice(1).join('—').trim() }
+        : { ticker: label.trim(), name: label.trim() };
+    }
+
+    // ── Analyze ──
+    // Validates positions, POSTs to /analyze, then calls renderResults().
+    // Shows a loading spinner while in-flight; surfaces errors via showError().
+    async function analyze() {
+      const btn = document.getElementById('btn-analyze');
+      const loading = document.getElementById('loading');
+      const results = document.getElementById('results');
+      const errorBox = document.getElementById('error-box');
+
+      const valid = positions.filter(p => p.label.trim() && p.weight > 0);
+      if (valid.length === 0) { showError('Add at least one position with a weight > 0.'); return; }
+
+      const payload = valid.map(p => ({ ...parsePosition(p.label), weight: p.weight }));
+
+      btn.disabled = true;
+      results.classList.add('hidden');
+      errorBox.classList.add('hidden');
+      loading.classList.remove('hidden');
+
+      try {
+        const res = await fetch('/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ positions: payload })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Request failed');
+        renderResults(data, payload);
+        loading.classList.add('hidden');
+        results.classList.remove('hidden');
+        results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch (err) {
+        loading.classList.add('hidden');
+        showError(err.message);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function showError(msg) {
+      const box = document.getElementById('error-box');
+      box.textContent = 'Error: ' + msg;
+      box.classList.remove('hidden');
+    }
+
+    // ── Render results ──
+    // Receives the full /analyze response and the original payload (for weight lookup).
+    // Populates: metric cards, position pills, sector/geo bar charts,
+    // correlation section, and LLM recommendation text.
+    function renderResults(data, payload) {
+      const { positions: pos, portfolio_summary: summary, correlations = [], corrWarnings = [], portfolio_volatility } = data;
+      lastCorrelations = correlations;
+
+      const weightMap = Object.fromEntries(payload.map(p => [p.ticker.toUpperCase(), p.weight]));
+      const total = payload.reduce((s, p) => s + p.weight, 0);
+
+      // Metrics
+      document.getElementById('m-count').textContent = pos.length;
+      document.getElementById('m-alloc').textContent = `${total}% allocated`;
+      const riskEl = document.getElementById('m-risk');
+      riskEl.textContent = summary.overall_risk || '—';
+      riskEl.className = 'metric-value ' + (summary.overall_risk || '').toLowerCase().replace(/\s+/g, '-');
+      document.getElementById('m-risk-vol').textContent = portfolio_volatility != null ? `σ = ${portfolio_volatility}% (2yr)` : '—';
+      const topSector = summary.top_sector;
+      document.getElementById('m-conc-value').textContent = topSector ? topSector.percentage + '%' : '—';
+      document.getElementById('m-conc-label').textContent = topSector ? `${topSector.name} — ${topSector.concentration}` : '';
+
+      // Positions
+      document.getElementById('position-results').innerHTML = pos.map(p => {
+        const w = weightMap[p.ticker.toUpperCase()] || '';
+        return `
+        <div class="position-result">
+          <div class="position-result-top">
+            <span class="pos-ticker">${p.ticker}</span>
+            <span class="pos-sector">${p.sector} - ${p.country}</span>
+            <span class="pos-weight">${w ? w + '%' : ''}</span>
+            <span class="risk-pill risk-${p.risk_level}">${p.risk_level} risk</span>
+          </div>
+          <div class="pos-reason">${p.risk_reason}</div>
+        </div>`;
+      }).join('');
+
+      // Charts
+      renderBars('sector-bars', summary.sectors || []);
+      renderBars('geo-bars', summary.geographies || []);
+
+      // Correlations
+      renderCorrelations(correlations, corrWarnings);
+
+      // LLM rec
+      document.getElementById('rec-title').textContent = topSector ? `${topSector.percentage}% ${topSector.name} — ${topSector.concentration}` : 'Portfolio Assessment';
+      document.getElementById('rec-text').textContent = summary.recommendation;
+      document.getElementById('corr-note').textContent = summary.correlation_note || '—';
+    }
+
+    // Renders a list of { name, percentage } items as horizontal bar rows.
+    // Used for both sector and geography charts.
+    function renderBars(id, items) {
+      const el = document.getElementById(id);
+      if (!items.length) { el.innerHTML = '<p style="color:#aaa;font-size:.8rem;">No data</p>'; return; }
+      el.innerHTML = items.map(item => `
+      <div class="bar-row">
+        <span class="bar-label">${item.name}</span>
+        <div class="bar-track">
+          <div class="bar-fill" style="width:${Math.min(item.percentage, 100)}%"></div>
+        </div>
+        <span class="bar-pct">${item.percentage}%</span>
+      </div>`).join('');
+    }
+
+    // ── Correlations ──
+    // Fixed 200px track for every row. Tick positioned at rho:
+    // margin-left = (rho + 1) / 2 * 100% maps [-1,+1] → [0%,100%].
+    function corrRowHTML(c) {
+      const tickPos = ((c.rho + 1) / 2 * 100).toFixed(1);
+      return `
+      <div class="corr-row">
+        <span class="corr-label">${c.pair[0]} / ${c.pair[1]}</span>
+        <div class="corr-track-wrapper">
+          <div class="corr-track">
+            <div class="corr-fill corr-fill-${c.level.replace(' ', '-')}" style="margin-left:${tickPos}%"></div>
+          </div>
+          <div class="corr-axis"><span>−1</span><span>0</span><span>+1</span></div>
+        </div>
+        <span class="corr-rho">&rho; = ${c.rho}</span>
+        <span class="corr-pill corr-pill-${c.level.replace(' ', '-')}">${c.level}</span>
+      </div>`;
+    }
+
+    // Splits correlations into flagged (High/Very high, always shown) and
+    // the rest (collapsible). Appends any price-fetch warnings as a footnote.
+    function renderCorrelations(correlations, warnings) {
+      const flagged = correlations.filter(c => c.level === 'Very high' || c.level === 'High');
+      const rest = correlations.filter(c => c.level !== 'Very high' && c.level !== 'High');
+
+      // Flag badge
+      const badge = document.getElementById('corr-flag-count');
+      if (flagged.length) {
+        badge.textContent = flagged.length + ' FLAGGED';
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+      }
+
+      // Flagged list
+      const flaggedEl = document.getElementById('corr-flagged');
+      if (flagged.length) {
+        flaggedEl.innerHTML = flagged.map(corrRowHTML).join('');
+      } else {
+        flaggedEl.innerHTML = '<p style="color:#aaa;font-size:.8rem;padding:4px 0;">No high-correlation pairs detected.</p>';
+      }
+
+      // Remaining pairs (collapsible)
+      const moreSection = document.getElementById('corr-more-section');
+      const moreEl = document.getElementById('corr-more');
+      const toggle = document.getElementById('corr-toggle');
+      if (rest.length) {
+        moreSection.classList.remove('hidden');
+        moreEl.innerHTML = rest.map(corrRowHTML).join('');
+        toggle.innerHTML = `&#9660; Show ${rest.length} more pair${rest.length > 1 ? 's' : ''}`;
+        moreEl.classList.add('hidden');
+      } else {
+        moreSection.classList.add('hidden');
+      }
+
+      // Warnings
+      if (warnings && warnings.length) {
+        flaggedEl.innerHTML += `<p style="color:#aaa;font-size:.75rem;margin-top:8px;">Note: ${warnings.join('; ')}</p>`;
+      }
+    }
+
+    function toggleCorrMore() {
+      const more = document.getElementById('corr-more');
+      const toggle = document.getElementById('corr-toggle');
+      const rest = lastCorrelations.filter(c => c.level !== 'Very high' && c.level !== 'High');
+      const isHidden = more.classList.toggle('hidden');
+      toggle.innerHTML = isHidden
+        ? `&#9660; Show ${rest.length} more pair${rest.length > 1 ? 's' : ''}`
+        : `&#9650; Hide remaining pairs`;
+    }
+
+    // Fetches live 24-month correlation for any two tickers via GET /correlate,
+    // then renders the bar + a short LLM note in the lookup result box.
+    async function lookupCorr() {
+      const a = parsePosition(document.getElementById('lookup-a').value).ticker.toUpperCase();
+      const b = parsePosition(document.getElementById('lookup-b').value).ticker.toUpperCase();
+      const resultEl = document.getElementById('lookup-result');
+
+      if (!a || !b) {
+        resultEl.innerHTML = '<div class="lookup-result-box"><div class="lookup-msg">Enter two tickers to look up.</div></div>';
+        return;
+      }
+
+      // Show inline spinner while fetching + LLM call
+      resultEl.innerHTML = `
+        <div class="lookup-result-box" style="text-align:center;color:#aaa;font-size:.82rem;padding:14px 0">
+          <div class="spinner" style="margin:0 auto 8px"></div>Fetching 24-month data&hellip;
+        </div>`;
+
+      try {
+        const r = await fetch(`/correlate?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || 'Request failed');
+
+        resultEl.innerHTML = `
+        <div class="lookup-result-box">
+          <div class="lookup-pair">${data.a} / ${data.b}</div>
+          <div class="lookup-hr"></div>
+          <div class="corr-row" style="margin-bottom:8px">
+            <div class="corr-track-wrapper">
+              <div class="corr-track">
+                <div class="corr-fill corr-fill-${data.level.replace(' ', '-')}" style="margin-left:${((data.rho + 1) / 2 * 100).toFixed(1)}%"></div>
+              </div>
+              <div class="corr-axis"><span>−1</span><span>0</span><span>+1</span></div>
+            </div>
+            <span class="corr-rho">&rho; = ${data.rho}</span>
+            <span class="corr-pill corr-pill-${data.level.replace(' ', '-')}">${data.level}</span>
+          </div>
+          ${data.lookUpNote ? `<div class="lookup-msg" style="color:#555;font-style:italic">${data.lookUpNote}</div>` : ''}
+        </div>`;
+      } catch (err) {
+        resultEl.innerHTML = `
+        <div class="lookup-result-box">
+          <div class="lookup-msg" style="color:#dc2626">Error: ${err.message}</div>
+        </div>`;
+      }
+    }
+
+    // ── Init ──
+    renderPositions();
+    document.getElementById('btn-add-position').addEventListener('click', addPosition);
+    document.getElementById('btn-add-confirm').addEventListener('click', addPosition);
+    document.getElementById('btn-analyze').addEventListener('click', analyze);
+    document.getElementById('corr-toggle').addEventListener('click', toggleCorrMore);
+    document.getElementById('btn-lookup').addEventListener('click', lookupCorr);
+
+    // Lookup inputs use the full Yahoo Finance search so the investor can look up
+    // any stock pair — including ones not yet in the portfolio.
+    const yahooSearch = async (q) => {
+      try {
+        const r = await fetch(`/search?q=${encodeURIComponent(q)}`);
+        return r.ok ? r.json() : [];
+      } catch { return []; }
+    };
+    attachAutocomplete(document.getElementById('lookup-a'), yahooSearch);
+    attachAutocomplete(document.getElementById('lookup-b'), yahooSearch);
+  </script>
+</body>
+
+</html>

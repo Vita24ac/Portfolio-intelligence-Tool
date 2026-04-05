@@ -1,0 +1,712 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Roboto', sans-serif;
+  background: #f5f5f5;
+  color: #1a1a1a;
+  font-size: 16px;
+  line-height: 1.3;
+  min-height: 100vh;
+  padding: 32px 24px 60px;
+}
+
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+/* ── Header ── */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 20px;
+}
+
+.header-title {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.header-subtitle {
+  font-size: 0.78rem;
+  color: #888;
+  margin-top: 3px;
+}
+
+.badge {
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 3px 9px;
+  font-size: 0.7rem;
+  color: #888;
+  white-space: nowrap;
+}
+
+/* ── Card ── */
+.card {
+  background: #fff;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 12px;
+}
+
+.section-label {
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #aaa;
+  margin-bottom: 12px;
+  font-weight: 500;
+}
+
+/* ── Input ── */
+.position-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 7px;
+  align-items: center;
+}
+
+.position-input {
+  flex: 1;
+  padding: 8px 11px;
+  border: 1px solid #e5e5e5;
+  border-radius: 6px;
+  font-family: 'Roboto', sans-serif;
+  font-size: 0.85rem;
+  color: #1a1a1a;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.position-input:focus {
+  border-color: #aaa;
+}
+
+.weight-input {
+  width: 68px;
+  padding: 8px 10px;
+  border: 1px solid #e5e5e5;
+  border-radius: 6px;
+  font-family: 'Roboto', sans-serif;
+  font-size: 0.85rem;
+  text-align: right;
+  color: #1a1a1a;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.weight-input:focus {
+  border-color: #aaa;
+}
+
+.weight-suffix {
+  font-size: 0.82rem;
+  color: #aaa;
+  margin-left: -4px;
+}
+
+.btn-remove {
+  padding: 7px 12px;
+  border: 1px solid #e5e5e5;
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+  font-family: 'Roboto', sans-serif;
+  font-size: 0.8rem;
+  color: #888;
+  transition: background 0.15s;
+}
+
+.btn-remove:hover {
+  background: #f5f5f5;
+  color: #333;
+}
+
+.add-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+  align-items: center;
+}
+
+.btn-add {
+  flex: 1;
+  padding: 8px 11px;
+  border: 1px dashed #d5d5d5;
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+  font-family: 'Roboto', sans-serif;
+  font-size: 0.85rem;
+  color: #aaa;
+  text-align: left;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.btn-add:hover {
+  border-color: #aaa;
+  color: #666;
+}
+
+.analyze-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.allocation-hint {
+  font-size: 0.8rem;
+  color: #aaa;
+}
+
+.allocation-hint.over {
+  color: #dc2626;
+}
+
+.btn-analyze {
+  background: #1a1a1a;
+  color: white;
+  border: none;
+  padding: 9px 18px;
+  border-radius: 6px;
+  font-family: 'Roboto', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: background 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.btn-analyze:hover {
+  background: #333;
+}
+
+.btn-analyze:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Loading / Error ── */
+.loading-box {
+  text-align: center;
+  padding: 32px;
+  color: #aaa;
+  font-size: 0.88rem;
+}
+
+.spinner {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #e5e5e5;
+  border-top-color: #1a1a1a;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  margin-bottom: 10px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.error-box {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  border-radius: 6px;
+  padding: 12px 14px;
+  color: #dc2626;
+  font-size: 0.85rem;
+  margin-bottom: 12px;
+}
+
+/* ── Metrics ── */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.metric-card {
+  background: #fff;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  padding: 16px 18px;
+}
+
+.metric-label {
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #aaa;
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.metric-value {
+  font-size: 1.9rem;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.metric-value.aggressive {
+  color: #dc2626;
+}
+
+.metric-value.moderate-aggressive {
+  color: #f97316;
+}
+
+.metric-value.moderate {
+  color: #eab308;
+}
+
+.metric-value.moderate-conservative {
+  color: #65a30d;
+}
+
+.metric-value.conservative {
+  color: #16a34a;
+}
+
+.metric-sub {
+  font-size: 0.74rem;
+  color: #aaa;
+  margin-top: 5px;
+}
+
+/* ── Content row (positions + charts) ── */
+.content-row {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.position-scroll {
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+/* ── Position result ── */
+.position-result {
+  padding: 12px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.position-result:last-child {
+  border-bottom: none;
+}
+
+.position-result-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pos-ticker {
+  font-weight: 700;
+  font-size: 0.95rem;
+  min-width: 58px;
+  letter-spacing: -0.01em;
+}
+
+.pos-sector {
+  flex: 1;
+  font-size: 0.84rem;
+  color: #666;
+}
+
+.pos-weight {
+  font-size: 0.82rem;
+  color: #888;
+  min-width: 36px;
+  text-align: right;
+}
+
+.risk-pill {
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 0.74rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.risk-High {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.risk-Mid {
+  background: #ffedd5;
+  color: #ea580c;
+}
+
+.risk-Low {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.pos-reason {
+  font-size: 0.78rem;
+  color: #999;
+  margin-top: 5px;
+  padding-left: 68px;
+}
+
+/* ── Charts ── */
+.chart-title {
+  font-weight: 700;
+  font-size: 0.88rem;
+  margin-bottom: 12px;
+}
+
+.charts-divider {
+  border: none;
+  border-top: 1px solid #f0f0f0;
+  margin: 14px 0;
+}
+
+.bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.bar-label {
+  font-size: 0.78rem;
+  color: #444;
+  min-width: 100px;
+  text-align: right;
+}
+
+.bar-track {
+  width: 80px;
+  /* fixed width — all bars the same length */
+  flex-shrink: 0;
+  height: 4px;
+  background: #f0f0f0;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 4px;
+  background: #1a1a1a;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.bar-pct {
+  font-size: 0.78rem;
+  color: #888;
+  min-width: 30px;
+  text-align: right;
+}
+
+/* ── Correlation ──
+   Bar track spans rho -1 to +1.
+   The center line (rho=0) is drawn via a CSS gradient at 50%.
+   The fill is positioned with margin-left so negative rho fills left of center.
+*/
+.corr-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.corr-sub-label {
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #aaa;
+  font-weight: 500;
+}
+
+.corr-flag-badge {
+  background: #dc2626;
+  color: white;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 10px;
+}
+
+.corr-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.corr-label {
+  font-size: 0.82rem;
+  color: #333;
+  min-width: 100px;
+  font-weight: 500;
+}
+
+/* Wraps the fixed-width track + axis labels */
+.corr-track-wrapper {
+  width: 600px;
+  /* fixed — identical for every row regardless of rho */
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.corr-track {
+  width: 100%;
+  height: 4px;
+  background: linear-gradient(to right, #f0f0f0 calc(50% - 0.5px), #bbb 50%, #f0f0f0 calc(50% + 0.5px));
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+/* Axis labels: −1 left, 0 centre, +1 right */
+.corr-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.6rem;
+  color: #ccc;
+  margin-top: 3px;
+  line-height: 1;
+}
+
+.corr-fill {
+  height: 10px;
+  width: 3px;
+  border-radius: 1px;
+  margin-top: -3px;
+  /* vertically centre tick on the 4px track */
+}
+
+.corr-fill-Very-high {
+  background: #dc2626;
+}
+
+.corr-fill-High {
+  background: #ea580c;
+}
+
+.corr-fill-Moderate {
+  background: #ca8a04;
+}
+
+.corr-fill-Low {
+  background: #16a34a;
+}
+
+.corr-fill-Negative {
+  background: #2563eb;
+}
+
+.corr-rho {
+  font-size: 0.78rem;
+  color: #666;
+  min-width: 56px;
+  text-align: right;
+}
+
+.corr-pill {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.68rem;
+  font-weight: 500;
+}
+
+.corr-pill-Very-high {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.corr-pill-High {
+  background: #ffedd5;
+  color: #ea580c;
+}
+
+.corr-pill-Moderate {
+  background: #fefce8;
+  color: #ca8a04;
+}
+
+.corr-pill-Low {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.corr-pill-Negative {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+/* ── Autocomplete dropdown ──
+   .autocomplete-wrapper replaces the bare flex:1 on .position-input,
+   giving us a positioned container so the dropdown can be absolute-positioned below.
+*/
+.autocomplete-wrapper {
+  flex: 1;
+  position: relative;
+}
+
+/* Input inside wrapper fills the full wrapper width */
+.autocomplete-wrapper .position-input {
+  width: 100%;
+  flex: none;
+}
+
+.autocomplete-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #e5e5e5;
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.09);
+  z-index: 100;
+  overflow: hidden;
+}
+
+.autocomplete-item {
+  padding: 8px 11px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.autocomplete-item:hover,
+.autocomplete-item.active {
+  background: #f5f5f5;
+}
+
+.autocomplete-item-ticker {
+  font-weight: 700;
+  color: #1a1a1a;
+  min-width: 46px;
+}
+
+.autocomplete-item-name {
+  color: #888;
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.corr-toggle {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 0.78rem;
+  cursor: pointer;
+  padding: 6px 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: 'Roboto', sans-serif;
+}
+
+.corr-toggle:hover {
+  color: #444;
+}
+
+.corr-divider {
+  border: none;
+  border-top: 1px solid #f0f0f0;
+  margin: 14px 0;
+}
+
+.corr-lookup-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.lookup-result-box {
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: #f9f9f9;
+  border: 1px solid #e5e5e5;
+  border-radius: 6px;
+}
+
+.lookup-pair {
+  font-weight: 700;
+  font-size: 0.9rem;
+  margin-bottom: 4px;
+}
+
+.lookup-hr {
+  width: 20px;
+  height: 2px;
+  background: #e5e5e5;
+  margin: 6px 0;
+}
+
+.lookup-msg {
+  font-size: 0.8rem;
+  color: #888;
+}
+
+/* ── LLM Rec ── */
+.rec-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #f97316;
+  margin-bottom: 6px;
+}
+
+.rec-text {
+  font-size: 0.85rem;
+  color: #444;
+  line-height: 1.6;
+}
+
+.rec-divider {
+  border: none;
+  border-top: 1px solid #f0f0f0;
+  margin: 14px 0;
+}
+
+.hidden {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .content-row {
+    grid-template-columns: 1fr;
+  }
+
+  .pos-reason {
+    padding-left: 0;
+    margin-top: 6px;
+  }
+}
