@@ -16,7 +16,8 @@
     <div class="header">
       <div>
         <div class="header-title">Portfolio Intelligence</div>
-        <div class="header-subtitle">LLM-powered analysis &middot; Inspired by Performativ</div>
+        <div class="header-subtitle">LLM-powered analysis &middot; Built for the Performativ application</div>
+        <div class="header-client">Client Portfolio</div>
       </div>
       <div class="badge">Proof of concept</div>
     </div>
@@ -100,6 +101,9 @@
           <div id="corr-more" class="hidden"></div>
         </div>
         <hr class="corr-divider" />
+        <div class="section-label">Correlation Note</div>
+        <div class="rec-text" id="corr-note"></div>
+        <hr class="corr-divider" />
         <div class="corr-sub-label">Look Up Pair Correlation</div>
         <div class="corr-lookup-row">
           <div class="autocomplete-wrapper">
@@ -113,14 +117,11 @@
         <div id="lookup-result"></div>
       </div>
 
-      <!-- LLM Recommendation + Correlation Note -->
+      <!-- LLM Recommendation -->
       <div class="card">
         <div class="section-label">LLM Recommendation</div>
         <div class="rec-title" id="rec-title"></div>
         <div class="rec-text" id="rec-text"></div>
-        <hr class="rec-divider" />
-        <div class="section-label">Correlation Note</div>
-        <div class="rec-text" id="corr-note"></div>
       </div>
 
     </div><!-- /results -->
@@ -293,22 +294,6 @@
       input.addEventListener('blur', () => setTimeout(closeDropdown, 150));
     }
 
-    // Portfolio-only search for the lookup inputs: filters tickers already in
-    // lastCorrelations (i.e. the stocks the investor actually analyzed).
-    // No network call — purely client-side filter of the current analysis result.
-    function portfolioSearch(q) {
-      const tickers = [...new Set(lastCorrelations.flatMap(c => c.pair))];
-      const upper = q.toUpperCase();
-      return Promise.resolve(
-        tickers
-          .filter(t => t.includes(upper))
-          .map(t => {
-            const pos = positions.find(p => parsePosition(p.label).ticker.toUpperCase() === t);
-            return { ticker: t, name: pos ? parsePosition(pos.label).name : '' };
-          })
-      );
-    }
-
     function addPosition() {
       const weightEl = document.getElementById('new-weight');
       positions.push({ label: '', weight: parseFloat(weightEl.value) || 0 });
@@ -388,7 +373,7 @@
     // Populates: metric cards, position pills, sector/geo bar charts,
     // correlation section, and LLM recommendation text.
     function renderResults(data, payload) {
-      const { positions: pos, portfolio_summary: summary, correlations = [], corrWarnings = [], portfolio_volatility } = data;
+      const { positions: pos, portfolioSummary: summary, correlations = [], corrWarnings = [], portfolioVolatility } = data;
       lastCorrelations = correlations;
 
       const weightMap = Object.fromEntries(payload.map(p => [p.ticker.toUpperCase(), p.weight]));
@@ -398,25 +383,25 @@
       document.getElementById('m-count').textContent = pos.length;
       document.getElementById('m-alloc').textContent = `${total}% allocated`;
       const riskEl = document.getElementById('m-risk');
-      riskEl.textContent = summary.overall_risk || '—';
-      riskEl.className = 'metric-value ' + (summary.overall_risk || '').toLowerCase().replace(/\s+/g, '-');
-      document.getElementById('m-risk-vol').textContent = portfolio_volatility != null ? `σ = ${portfolio_volatility}% (2yr)` : '—';
-      const topSector = summary.top_sector;
+      riskEl.textContent = summary.overallRisk || '—';
+      riskEl.className = 'metric-value ' + (summary.overallRisk || '').toLowerCase().replace(/\s+/g, '-');
+      document.getElementById('m-risk-vol').textContent = portfolioVolatility != null ? `σ = ${portfolioVolatility}% (2yr)` : '—';
+      const topSector = summary.topSector;
       document.getElementById('m-conc-value').textContent = topSector ? topSector.percentage + '%' : '—';
       document.getElementById('m-conc-label').textContent = topSector ? `${topSector.name} — ${topSector.concentration}` : '';
 
       // Positions
-      document.getElementById('position-results').innerHTML = pos.map(p => {
+      document.getElementById('position-results').textContent = pos.map(p => {
         const w = weightMap[p.ticker.toUpperCase()] || '';
         return `
         <div class="position-result">
           <div class="position-result-top">
             <span class="pos-ticker">${p.ticker}</span>
-            <span class="pos-sector">${p.sector} - ${p.country}</span>
+            <span class="pos-sector">${[p.sector, p.country].filter(Boolean).join(' · ') || '—'}</span>
             <span class="pos-weight">${w ? w + '%' : ''}</span>
-            <span class="risk-pill risk-${p.risk_level}">${p.risk_level} risk</span>
+            <span class="risk-pill risk-${p.riskLevel}">${p.riskLevel} risk</span>
           </div>
-          <div class="pos-reason">${p.risk_reason}</div>
+          <div class="pos-reason">${p.riskReason}</div>
         </div>`;
       }).join('');
 
@@ -430,7 +415,7 @@
       // LLM rec
       document.getElementById('rec-title').textContent = topSector ? `${topSector.percentage}% ${topSector.name} — ${topSector.concentration}` : 'Portfolio Assessment';
       document.getElementById('rec-text').textContent = summary.recommendation;
-      document.getElementById('corr-note').textContent = summary.correlation_note || '—';
+      document.getElementById('corr-note').textContent = summary.correlationNote || '—';
     }
 
     // Renders a list of { name, percentage } items as horizontal bar rows.
@@ -458,12 +443,12 @@
         <span class="corr-label">${c.pair[0]} / ${c.pair[1]}</span>
         <div class="corr-track-wrapper">
           <div class="corr-track">
-            <div class="corr-fill corr-fill-${c.level.replace(' ', '-')}" style="margin-left:${tickPos}%"></div>
+            <div class="corr-fill corr-fill-${c.level.replace(/\s+/g, '-')}" style="margin-left:${tickPos}%"></div>
           </div>
           <div class="corr-axis"><span>−1</span><span>0</span><span>+1</span></div>
         </div>
         <span class="corr-rho">&rho; = ${c.rho}</span>
-        <span class="corr-pill corr-pill-${c.level.replace(' ', '-')}">${c.level}</span>
+        <span class="corr-pill corr-pill-${c.level.replace(/\s+/g, '-')}">${c.level}</span>
       </div>`;
     }
 
@@ -546,16 +531,7 @@
         <div class="lookup-result-box">
           <div class="lookup-pair">${data.a} / ${data.b}</div>
           <div class="lookup-hr"></div>
-          <div class="corr-row" style="margin-bottom:8px">
-            <div class="corr-track-wrapper">
-              <div class="corr-track">
-                <div class="corr-fill corr-fill-${data.level.replace(' ', '-')}" style="margin-left:${((data.rho + 1) / 2 * 100).toFixed(1)}%"></div>
-              </div>
-              <div class="corr-axis"><span>−1</span><span>0</span><span>+1</span></div>
-            </div>
-            <span class="corr-rho">&rho; = ${data.rho}</span>
-            <span class="corr-pill corr-pill-${data.level.replace(' ', '-')}">${data.level}</span>
-          </div>
+          ${corrRowHTML({ pair: [data.a, data.b], rho: data.rho, level: data.level })}
           ${data.lookUpNote ? `<div class="lookup-msg" style="color:#555;font-style:italic">${data.lookUpNote}</div>` : ''}
         </div>`;
       } catch (err) {

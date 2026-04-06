@@ -40,6 +40,11 @@ body {
   color: #888;
   margin-top: 3px;
 }
+.header-client {
+  font-size: 0.78rem;
+  color: #888;
+  margin-top: 3px;
+}
 
 .badge {
   border: 1px solid #ccc;
