@@ -373,7 +373,7 @@
     // Populates: metric cards, position pills, sector/geo bar charts,
     // correlation section, and LLM recommendation text.
     function renderResults(data, payload) {
-      const { positions: pos, portfolioSummary: summary, correlations = [], corrWarnings = [], portfolioVolatility } = data;
+      const { : pos, portfolioSummary: summary, correlations = [], corrWarnings = [], portfolioVolatility } = data;
       lastCorrelations = correlations;
 
       const weightMap = Object.fromEntries(payload.map(p => [p.ticker.toUpperCase(), p.weight]));
