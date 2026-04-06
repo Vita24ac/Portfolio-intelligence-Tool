@@ -90,7 +90,7 @@ Position labels use `TICKER — Name` format (e.g. `AAPL — Apple Inc.`). `pars
 
 ## Key constraints
 - API key in `.env` only — never hardcoded
-- Deployed on Vercel; `server.js` is the entry point
+- Deployed on Digital Ocean
 - Keep frontend in `public/index.html` — no framework, no bundler
 - MVC or multi-file restructuring is intentionally deferred — the two-file constraint is right for the current scope
 - `setMonth` is used for the 24-month lookback — be aware it can overflow on month-end dates; prefer `setFullYear(getFullYear() - N)` for changes to the lookback period
