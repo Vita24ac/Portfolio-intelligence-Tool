@@ -36,7 +36,7 @@ Two-file project — no build step, no framework:
 2. **Compute metrics** — `alignPrices()` intersects trading dates across all tickers (handles US/EU calendar differences). `pearson()` runs on aligned daily returns per pair. `volatility()` computes annualised σ = `stddev(returns) × √252`, expressed as %.
 3. **Portfolio volatility** — Weighted daily return series built from all aligned tickers; annualised σ mapped to `overallRisk` via `riskLevel()`.
 4. **Build LLM message** — Inlines verified sector/country from Yahoo (`metaSummary`), per-ticker volatility with `positionRisk()` label (`volSummary`), and pairwise correlations (`corrSummary`).
-5. **Call OpenAI** — `gpt-4o-mini` via function calling (`analyzeTool`). The model outputs per-position risk narrative and portfolio summary text; `risk_level` is constrained to `High | Mid | Low` via the tool schema enum.
+5. **Call OpenAI** — `gpt-4o-mini` via function calling (`analyzeTool`). The model outputs per-position risk narrative and portfolio summary text; `riskLevel` is constrained to `High | Mid | Low` via the tool schema enum.
 6. **Merge & return** — Server-computed `sectors`, `geographies` (from `computeBreakdown()`), `overallRisk`, `correlations`, and `portfolioVolatility` are merged into the LLM response before sending to the client.
 
 ### Key shared functions
@@ -69,20 +69,20 @@ Two-file project — no build step, no framework:
   "positions": [
     {
       "ticker": "string",
-      "risk_level": "High | Mid | Low",
-      "risk_reason": "string (1-2 sentences, e.g. 'Annualised volatility of 17.4% reflects...')",
-      "key_risk_factor": "string (2-4 words)"
+      "riskLevel": "High | Mid | Low",
+      "riskRreason": "string (1-2 sentences, e.g. 'Annualised volatility of 17.4% reflects...')",
+      "keyRiskFactor": "string (2-4 words)"
     }
   ],
-  "portfolio_summary": {
-    "top_concentration": "string (e.g. '55% Technology — over-exposed')",
+  "portfolioSummary": {
+    "topConcentration": "string (e.g. '55% Technology — over-exposed')",
     "recommendation": "string (2-3 sentences)",
-    "correlation_note": "string (2-3 sentences, references specific tickers and ρ values)"
+    "correlationNote": "string (2-3 sentences, references specific tickers and ρ values)"
   }
 }
 ```
 
-The frontend parses `top_concentration` with a regex to extract the leading percentage for the metric card.
+The frontend parses `topConcentration` with a regex to extract the leading percentage for the metric card.
 
 ## Input format
 

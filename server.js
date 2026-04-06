@@ -1,11 +1,17 @@
 // ═══════════════════════════════════════════════════════════════
 // server.js — Express backend for Portfolio Intelligence
 //
-// Single endpoint: POST /analyze
-//   1. Fetches ~24 months of daily closes for each ticker (yahoo-finance2)
-//   2. Computes pairwise Pearson correlations on daily returns
-//   3. Calls gpt-4o-mini with positions + correlation data
-//   4. Returns { positions, portfolio_summary, correlations, corrWarnings }
+// Endpoints: GET /status, GET /search, GET /correlate, POST /analyze
+//   1. Fetches ~24 months of daily closes + sector/country metadata per ticker
+//      (yahoo-finance2, 1hr in-memory cache)
+//   2. Aligns trading dates across tickers; computes pairwise Pearson (ρ) and
+//      per-ticker annualised volatility (σ)
+//   3. Builds a weighted portfolio return series → annualised portfolio σ +
+//      overall risk label
+//   4. Calls gpt-4o-mini with grounded metadata, volatility, and correlation
+//      data via function calling
+//   5. Returns { positions, portfolioSummary, correlations, corrWarnings,
+//      portfolioVolatility }
 // ═══════════════════════════════════════════════════════════════
 
 require('dotenv').config();
@@ -15,11 +21,11 @@ const YahooFinance = require('yahoo-finance2').default;
 const yahooFinance = new YahooFinance(); // new is needed beacuse it is a class.
 
 // ── App & client setup ──
-const app = express(); //uses the express.
-app.use(express.json()); //express should uese
+const app = express(); 
+app.use(express.json()); 
 app.use(express.static('public')); // serves public/index.html as the frontend (index.html is the default)
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }); // the Open AI API key
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }); 
 
 // ── Caches (1hr TTL each) ──
 const priceCache = new Map(); // { dates[], closes[] }
@@ -29,19 +35,19 @@ const metaCache  = new Map(); // { sector, country }
 // Degrades to nulls silently — the LLM falls back to training knowledge for that ticker.
 async function fetchMeta(ticker) {
   const key = ticker.toUpperCase();
-  const hit = metaCache.get(key); // holds the datapoints called from Yahoo. 
-  if (hit && Date.now() - hit.ts < 3_600_000) return hit.data; //collects new data if the cache has expired (1-hr) & is true 
+  const hit = metaCache.get(key); // cached entry, or undefined on miss
+  if (hit && Date.now() - hit.ts < 3_600_000) return hit.data; // return cached data if still within 1hr TTL.
  
   try {
     const summary = await yahooFinance.quoteSummary(key, { modules: ['assetProfile'] }); //Collects data from the JSON-object assetProfile
     const profile = summary.assetProfile || {}; 
 
-    //gets data about sector and country, so Open AI doesn't have to guess.
+    // gets data about sector and country, so Open AI doesn't have to guess.
     const data = { 
       sector:  profile.sector  || null,
       country: profile.country || null
     };
-    //sets the metacache to contain key/ticker, date now and data (sector and country)
+    // sets the metacache to contain key/ticker, date now and data — metaCache.set(key, { ts: Date.now(), data })
     metaCache.set(key, { ts: Date.now(), data });
     return data;
   } catch {
@@ -57,12 +63,11 @@ async function fetchCloses(ticker) {
   if (hit && Date.now() - hit.ts < 3_600_000) return hit.data; // cache hit
 
   const period2 = new Date(); // End date - today
-  const period1 = new Date(); // start date - 24 days from today
-  period1.setMonth(period1.getMonth() - 24); // defines period now - 24 months
+  const period1 = new Date(); // start date - 2 years from today
+  period1.setFullYear(period1.getFullYear() - 2);
 
   // the actual API-call
   let quotes;
-   // build-in method that handles http-req function by alling historical function and gets the data on the stocks in the interval we need the stocks
   try {
     quotes = await yahooFinance.historical(key, {
       period1,
@@ -79,15 +84,15 @@ async function fetchCloses(ticker) {
     throw err;
   }
 
-  //min. data requirements for rho (pearson function)
-  const valid = quotes.filter(q => q.close !== null); // looping over every stock quotes, and filtering for null. 
-  if (valid.length < 3) throw new Error(`Not enough price data for ${key}`);
+  // min. data requirements for rho (pearson function)
+  const valid = quotes.filter(q => q.close !== null); 
+  if (valid.length < 3) throw new Error(`Not enough price data for ${key}`);// looping over every stock quotes, and filtering for null. 
 
 
   const dates = valid.map(q => q.date.toISOString().split('T')[0]); //gets the date without the time (splits at T). e.g. "2024-04-03T00:00:00.000Z"
-  const closes = valid.map(q => q.close); //close price
-  const data = { dates, closes }; //necessary data to calculate 
-  priceCache.set(key, { ts: Date.now(), data }); //the timestamp (ts) of when the data was cached
+  const closes = valid.map(q => q.close);
+  const data = { dates, closes }; 
+  priceCache.set(key, { ts: Date.now(), data }); 
   return data;
 }
 
@@ -98,7 +103,7 @@ async function fetchCloses(ticker) {
 function alignPrices(priceMap) {
   const tickers = Object.keys(priceMap); //ticker names from the input priceMap
   const sets = tickers.map(t => new Set(priceMap[t].dates)); //fast, removes duplicates and unsorted (finds every useful dates), converts it into a =(1).has() lookups (Prepares filterquery - Power Automate) in a new array.
-  const common = [...sets[0]].filter(d => sets.every(s => s.has(d))).sort(); //finds the dates where all tickers has the same a value (open market days)
+  const common = [...sets[0]].filter(d => sets.every(s => s.has(d))).sort(); //finds the dates where all tickers has the same value (open market days)
   const aligned = {};
   for (const t of tickers) {
     const lookup = Object.fromEntries(priceMap[t].dates.map((d, i) => [d, priceMap[t].closes[i]])); //Potential output[["2025-01-02", 182.5], ["2025-01-03", 199.6]] - finds date and close price for each ticker.
@@ -107,20 +112,20 @@ function alignPrices(priceMap) {
   return aligned; // returns both tickers close prices.
 }
 
+function toReturns(closes) {
+  const r = [];
+  for (let i = 1; i < closes.length; i++) r.push((closes[i] - closes[i - 1]) / closes[i - 1]);
+  return r;
+}
+
 // Computes Pearson correlation coefficient between two price series.
 // Converts closes to daily returns first (% change), then correlates.
 // Returns a value in [-1, 1] rounded to 2 decimal places, or null if too few points.
 function pearson(a, b) { //input close price for each ticker - a = [170.00, 172.50, 171.00, 174.00, 173.50]
   const n = Math.min(a.length, b.length);
   if (n < 3) return null; //minimum amount for calculating rho-value.
-  const ra = [], rb = [];
-
-   //finds the percentage for each stock.
-  for (let i = 1; i < n; i++) {
-    ra.push((a[i] - a[i - 1]) / a[i - 1]);
-    rb.push((b[i] - b[i - 1]) / b[i - 1]);
-  }
-
+  const ra = toReturns(a.slice(0, n));
+  const rb = toReturns(b.slice(0, n));
   //find the mean/avg. value
   const ma = ra.reduce((s, v) => s + v, 0) / ra.length; 
   const mb = rb.reduce((s, v) => s + v, 0) / rb.length;
@@ -133,27 +138,19 @@ function pearson(a, b) { //input close price for each ticker - a = [170.00, 172.
     sb += (rb[i] - mb) ** 2;
   }
 
-  const denom = Math.sqrt(sa * sb); //the sum of the two Standard Deviation
+  const denom = Math.sqrt(sa * sb);
   return denom < 1e-10 ? 0 : Math.round((num / denom) * 100) / 100; // returns the Pearson value if the variance is not zero
 }
 
-// Maps a rho value to a human-readable risk label used by the frontend for styling.
+
 // Computes annualised volatility (σ) from a closes array.
 // Formula: stddev of daily returns × √252 (trading days per year), expressed as %.
 // This is the standard measure of a stock's price risk.
 function volatility(closes) {
   const n = closes.length; 
-  if (n < 3) return null; // //minimum amount for calculating volatility-value.
-  const returns = []; 
-
-    //finds the percentage for each stock.
-  for (let i = 1; i < n; i++) {
-    returns.push((closes[i] - closes[i - 1]) / closes[i - 1])
-  };
-  //find the mean/avg. value
+  if (n < 3) return null; // minimum amount for calculating volatility-value.
+  const returns = toReturns(closes);
   const mean = returns.reduce((s, v) => s + v, 0) / returns.length;
-
-  //calculates the variance
   const variance = returns.reduce((s, v) => s + (v - mean) ** 2, 0) / (returns.length - 1);
 
   //returns the volatility
@@ -178,7 +175,7 @@ function computeBreakdown(positions, metaMap, field) {
     .sort((a, b) => b.percentage - a.percentage);
 }
 
-//Rating for each rho value.
+// Maps a rho value to a human-readable risk label used by the frontend for styling.
 function corrLevel(rho) {
   if (rho >= 0.8) return 'Very high';
   if (rho >= 0.5) return 'High';
@@ -255,8 +252,8 @@ app.get('/correlate', async (req, res) => {
     return res.status(err.statusCode || 400).json({ error: err.message }); 
   }
 
-  const aligned = alignPrices({ [a]: dataA, [b]: dataB }); // sends the close prices for each ticker to the alignPairs for it to run the function and stored in the variable.
-  const rho = pearson(aligned[a], aligned[b]); //finds the rho value for the two stocks using the pearson function and stores it into rho.
+  const aligned = alignPrices({ [a]: dataA, [b]: dataB }); // sends the close prices for each ticker to the alignPrices for it to run the function and stored in the variable.
+  const rho = pearson(aligned[a], aligned[b]); 
   if (rho === null) return res.status(400).json({ error: 'Not enough overlapping price data' });
   const level = corrLevel(rho); 
 
@@ -269,7 +266,7 @@ app.get('/correlate', async (req, res) => {
       type: 'function',
       function: {
         name: 'get_ticker_info',
-        description: 'Returns verified sector and country for a stock ticker from Yahoo Finance.', //when to use this tool (when the AI is unsure if it's right or wrong.)
+        description: 'Returns verified sector and country for a stock ticker from Yahoo Finance.', 
         parameters: {
           type: 'object',
           properties: {
@@ -346,23 +343,23 @@ const analyzeTool = {
           items: {
             type: 'object',
             properties: {
-              ticker:          { type: 'string' },
-              risk_reason:     { type: 'string', description: "1-2 sentences about why the risk reason. e.g. Annualised volatility of 17.4% reflects stable earnings and strong buyback program." },
-              key_risk_factor: { type: 'string', description: '2-4 words' }
+              ticker:         { type: 'string' },
+              riskReason:     { type: 'string', description: "1-2 sentences about why the risk reason. e.g. Annualised volatility of 17.4% reflects stable earnings and strong buyback program." },
+              keyRiskFactor:  { type: 'string', description: '2-4 words' }
             },
-            required: ['ticker', 'risk_reason', 'key_risk_factor']
+            required: ['ticker', 'riskReason', 'keyRiskFactor']
           }
         },
-        portfolio_summary: {
+        portfolioSummary: {
           type: 'object',
           properties: {
             recommendation:   { type: 'string', description: '2-3 sentences about what the investor should be aware of, and recommend different assets' },
-            correlation_note: { type: 'string', description: '2-3 sentences about the most important correlation risks, mentioning specific tickers and rho values if available' }
+            correlationNote:  { type: 'string', description: '2-3 sentences about the most important correlation risks, mentioning specific tickers and rho values if available' }
           },
-          required: ['recommendation', 'correlation_note']
+          required: ['recommendation', 'correlationNote']
         }
       },
-      required: ['positions', 'portfolio_summary']
+      required: ['positions', 'portfolioSummary']
     }
   }
 };
@@ -370,83 +367,85 @@ const analyzeTool = {
 // ── POST /analyze ──
 // Main route: receives { positions: [{ ticker, name, weight }] } from the frontend.
 app.post('/analyze', async (req, res) => {
-  const { positions } = req.body; // takes the positions from the user input
-  if (!positions || !Array.isArray(positions) || positions.length === 0) { // must be an array and exists
+  const { positions } = req.body; 
+  if (!positions || !Array.isArray(positions) || positions.length === 0) { 
     return res.status(400).json({ error: 'positions must be a non-empty array' });
   }
 
   // ── Step 1: Fetch prices, metadata & compute pairwise correlations ──
   // fetchCloses and fetchMeta run in parallel per ticker.
   // Failed tickers are skipped (corrWarnings) rather than aborting the whole request.
-  let correlations = [];
+  const correlations = [];
   const corrWarnings = [];
-  let volMap  = {};
-  let metaMap = {};
+  const volMap  = {};
+  const metaMap = {};
   let portfolioVolatility = null;
   let overallRisk = null;
 
-  {
-    const [priceResults, metaResults] = await Promise.all([
-      Promise.allSettled(positions.map(p => fetchCloses(p.ticker))), //calls and uses the fetchCloses function to find the close prices.
-      Promise.allSettled(positions.map(p => fetchMeta(p.ticker))) //calls and uses the metaCloses function to find sector and country. 
-    ]);
+  const [priceResults, metaResults] = await Promise.all([
+    Promise.allSettled(positions.map(p => fetchCloses(p.ticker))),
+    Promise.allSettled(positions.map(p => fetchMeta(p.ticker)))
+  ]);
 
-    const priceMap = {};
+  const priceMap = {};
 
-    positions.forEach((p, i) => { //loops over the investors portfolio
-      const key = p.ticker.toUpperCase(); 
-      if (priceResults[i].status === 'fulfilled') { //only accepts tickers with a fulfilled status
-        priceMap[key] = priceResults[i].value; // creates obejct for each ticker
-        const vol = volatility(priceResults[i].value.closes); //uses the volatility for each ticker
-        if (vol !== null) volMap[key] = vol;
-      } else {
-        const err = priceResults[i].reason;
-        if (err.statusCode === 429) return res.status(429).json({ error: err.message });
-        corrWarnings.push(`${p.ticker}: ${err.message}`);
-      }
-      // metaResults never rejects (fetchMeta swallows errors), so always fulfilled
-      metaMap[key] = metaResults[i].value;
-    });
-
-    const tickers = Object.keys(priceMap);
-    if (tickers.length >= 2) {
-      // Align each pair independently — maximises data points per pair
-      // (global alignment loses dates whenever any single ticker didn't trade)
-      for (let i = 0; i < tickers.length; i++) {
-        for (let j = i + 1; j < tickers.length; j++) {
-          const a = tickers[i], b = tickers[j];
-          const aligned = alignPrices({ [a]: priceMap[a], [b]: priceMap[b] });
-          const rho = pearson(aligned[a], aligned[b]);
-          if (rho !== null) {
-            correlations.push({ pair: [a, b], rho, level: corrLevel(rho) }); //output [{ pair: ['AAPL', 'MSFT'], rho: 0.87,  level: 'Very high' }]
-          }
-        }
-      }
-      correlations.sort((a, b) => b.rho - a.rho); // highest rho first
+  for (let i = 0; i < positions.length; i++) {
+    const p = positions[i];
+    const key = p.ticker.toUpperCase();
+    if (priceResults[i].status === 'fulfilled') {
+      priceMap[key] = priceResults[i].value;
+      const vol = volatility(priceResults[i].value.closes);
+      if (vol !== null) volMap[key] = vol;
+    } else {
+      const err = priceResults[i].reason;
+      if (err.statusCode === 429) return res.status(429).json({ error: err.message });
+      corrWarnings.push(`${p.ticker}: ${err.message}`);
     }
+    metaMap[key] = metaResults[i].value; 
+  }
 
-    // ── Portfolio-level volatility ──
-    // Align all available tickers globally, build a weighted daily return series, annualise σ.
-    const totalWeight = positions.reduce((s, p) => s + p.weight, 0);
-    if (tickers.length >= 1 && totalWeight > 0) {
-      const aligned = alignPrices(Object.fromEntries(tickers.map(t => [t, priceMap[t]])));
-      const n = aligned[tickers[0]].length; //amount of common days
-      if (n >= 3) {
-        const portReturns = [];
-        for (let i = 1; i < n; i++) {
-          let r = 0; // weighted portfolio return for a single day
-          for (const t of tickers) {
-            const pos = positions.find(p => p.ticker.toUpperCase() === t);
-            const w = pos ? pos.weight / totalWeight : 0;
-            r += w * (aligned[t][i] - aligned[t][i - 1]) / aligned[t][i - 1];
-          }
-          portReturns.push(r); // accumulates weighted daily return for each trading day
+  const tickers = Object.keys(priceMap);
+  if (tickers.length >= 2) {
+    // Align each pair independently — maximises data points per pair
+    // (global alignment loses dates whenever any single ticker didn't trade)
+    for (let i = 0; i < tickers.length; i++) {
+      for (let j = i + 1; j < tickers.length; j++) {
+        const a = tickers[i], b = tickers[j];
+        const aligned = alignPrices({ [a]: priceMap[a], [b]: priceMap[b] });
+        const rho = pearson(aligned[a], aligned[b]);
+        if (rho !== null) {
+          correlations.push({ pair: [a, b], rho, level: corrLevel(rho) });
         }
-        const mean = portReturns.reduce((s, v) => s + v, 0) / portReturns.length;
-        const variance = portReturns.reduce((s, v) => s + (v - mean) ** 2, 0) / (portReturns.length - 1);
-        portfolioVolatility = Math.round(Math.sqrt(variance) * Math.sqrt(252) * 10000) / 100; //252 is the avg. amount of trading days. Quite precise estimate, as it differs from 250 to 253
-        overallRisk = riskLevel(portfolioVolatility);
       }
+    }
+    correlations.sort((a, b) => b.rho - a.rho); // highest rho first
+  }
+
+  // ── Portfolio-level volatility ──
+  // Align all available tickers globally, build a weighted daily return series, annualise σ.
+  // Normalize weights only over tickers with price data — excludes failed fetches.
+  const alignedWeight = tickers.reduce((s, t) => {
+    const pos = positions.find(p => p.ticker.toUpperCase() === t);
+    return s + (pos ? pos.weight : 0);
+  }, 0);
+  if (tickers.length >= 1 && alignedWeight > 0) {
+    const aligned = alignPrices(Object.fromEntries(tickers.map(t => [t, priceMap[t]])));
+    const n = aligned[tickers[0]].length;
+    if (n >= 3) {
+      const portReturns = [];
+      for (let i = 1; i < n; i++) {
+        let r = 0;
+        for (const t of tickers) {
+          const pos = positions.find(p => p.ticker.toUpperCase() === t);
+          const w = pos ? pos.weight / alignedWeight : 0;
+          r += w * (aligned[t][i] - aligned[t][i - 1]) / aligned[t][i - 1];
+        }
+        portReturns.push(r);
+      }
+      const mean = portReturns.reduce((s, v) => s + v, 0) / portReturns.length;
+      const variance = portReturns.reduce((s, v) => s + (v - mean) ** 2, 0) / (portReturns.length - 1);
+      portfolioVolatility = Math.round(Math.sqrt(variance) * Math.sqrt(252) * 10000) / 100;
+      overallRisk = riskLevel(portfolioVolatility);
     }
   }
 
@@ -464,7 +463,7 @@ app.post('/analyze', async (req, res) => {
     return parts.length ? `${key}: ${parts.join(', ')}` : null;
   }).filter(Boolean).join('; ');
 
-  const volSummary = Object.keys(volMap).length //
+  const volSummary = Object.keys(volMap).length
     ? '\n\nAnnualised volatility (24-month daily returns): ' +
       Object.entries(volMap).map(([t, v]) => `${t} σ=${v}% (${positionRisk(v)})`).join(', ')
     : '';
@@ -489,12 +488,11 @@ app.post('/analyze', async (req, res) => {
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage }
       ],
-      //calls the analyze function
       tools: [analyzeTool],
       tool_choice: { type: 'function', function: { name: 'submit_portfolio_analysis' } },
       temperature: 0.3 //most likely answer - lower the risk for hallucination
     });
-    raw = completion.choices[0].message.tool_calls[0].function.arguments; // raw data on each ticker. 
+    raw = completion.choices[0].message.tool_calls[0].function.arguments; // full JSON analysis result. 
   } catch (err) {
     console.error('OpenAI API error:', err.message);
     if (err.status === 429) return res.status(429).json({ error: 'OpenAI rate limit hit — try again in a moment' });
@@ -516,20 +514,20 @@ app.post('/analyze', async (req, res) => {
 
   const positionsWithMeta = (parsed.positions || []).map(p => ({
     ...p,
-    risk_level: positionRisk(volMap[p.ticker.toUpperCase()] ?? 0),
-    sector:     metaMap[p.ticker.toUpperCase()]?.sector  || p.sector,
-    country:    metaMap[p.ticker.toUpperCase()]?.country || null
+    riskLevel: positionRisk(volMap[p.ticker.toUpperCase()] ?? 0),
+    sector:    metaMap[p.ticker.toUpperCase()]?.sector  ?? null,
+    country:   metaMap[p.ticker.toUpperCase()]?.country ?? null
   }));
 
   res.json({
     ...parsed,
     positions: positionsWithMeta,
-    portfolio_summary: {
-      ...parsed.portfolio_summary,
-      overall_risk: overallRisk,
+    portfolioSummary: {
+      ...parsed.portfolioSummary,
+      overallRisk,
       sectors,
       geographies,
-      top_sector: sectors[0] ?? null,
+      topSector: sectors[0] ?? null,
     },
     correlations,
     corrWarnings,
