@@ -383,8 +383,8 @@
       document.getElementById('m-count').textContent = pos.length;
       document.getElementById('m-alloc').textContent = `${total}% allocated`;
       const riskEl = document.getElementById('m-risk');
-      riskEl.textContent = summary.overall_risk || '—';
-      riskEl.className = 'metric-value ' + (summary.overall_risk || '').toLowerCase().replace(/\s+/g, '-');
+      riskEl.textContent = summary.overallRisk || '—';
+      riskEl.className = 'metric-value ' + (summary.overallRisk || '').toLowerCase().replace(/\s+/g, '-');
       document.getElementById('m-risk-vol').textContent = portfolioVolatility != null ? `σ = ${portfolioVolatility}% (2yr)` : '—';
       const topSector = summary.topSector;
       document.getElementById('m-conc-value').textContent = topSector ? topSector.percentage + '%' : '—';
