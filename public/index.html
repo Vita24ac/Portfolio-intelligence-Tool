@@ -16,7 +16,7 @@
     <div class="header">
       <div>
         <div class="header-title">Portfolio Intelligence</div>
-        <div class="header-subtitle">LLM-powered analysis &middot; Built for the Performativ application</div>
+        <div class="header-subtitle">LLM-powered analysis &middot; Built for the Performativapplication</div>
         <div class="header-client">Client Portfolio</div>
       </div>
       <div class="badge">Proof of concept</div>
@@ -391,7 +391,7 @@
       document.getElementById('m-conc-label').textContent = topSector ? `${topSector.name} — ${topSector.concentration}` : '';
 
       // Positions
-      document.getElementById('position-results').textContent = pos.map(p => {
+      document.getElementById('position-results').innerHTML = pos.map(p => {
         const w = weightMap[p.ticker.toUpperCase()] || '';
         return `
         <div class="position-result">
@@ -448,7 +448,7 @@
           <div class="corr-axis"><span>−1</span><span>0</span><span>+1</span></div>
         </div>
         <span class="corr-rho">&rho; = ${c.rho}</span>
-        <span class="corr-pill corr-pill-${c.level.replace(/\s+/g, '-')}">${c.level}</span>
+        <span class="corr-pill corr-pill-${c.level.replace(' ', '-')}">${c.level}</span>
       </div>`;
     }
 
