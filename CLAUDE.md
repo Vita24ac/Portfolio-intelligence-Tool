@@ -75,7 +75,6 @@ Two-file project — no build step, no framework:
     }
   ],
   "portfolioSummary": {
-    "topConcentration": "string (e.g. '55% Technology — over-exposed')",
     "recommendation": "string (2-3 sentences)",
     "correlationNote": "string (2-3 sentences, references specific tickers and ρ values)"
   }
