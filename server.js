@@ -2,7 +2,7 @@
 // server.js — Express backend for Portfolio Intelligence
 //
 // Endpoints: GET /status, GET /search, GET /correlate, POST /analyze
-//   1. Fetches ~24 months of daily closes + sector/country metadata per ticker
+//   1. Fetches ~24 months of daily adjcloses + sector/country metadata per ticker
 //      (yahoo-finance2, 1hr in-memory cache)
 //   2. Aligns trading dates across tickers; computes pairwise Pearson (ρ) and
 //      per-ticker annualised volatility (σ)
@@ -28,7 +28,7 @@ app.use(express.static('public')); // serves public/index.html as the frontend (
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }); 
 
 // ── Caches (1hr TTL each) ──
-const priceCache = new Map(); // { dates[], closes[] }
+const priceCache = new Map(); // { dates[], adjcloses[] }
 const metaCache  = new Map(); // { sector, country }
 
 // Fetches real sector + country for a ticker via quoteSummary assetProfile.
@@ -55,25 +55,26 @@ async function fetchMeta(ticker) {
   }
 }
 
-// Fetches last ~24 months of daily closes for a single ticker.
-// Returns { dates: string[], closes: number[] }, sorted ascending.
+// Fetches last ~24 months of daily adjcloses for a single ticker.
+// Returns { dates: string[], adjcloses: number[] }, sorted ascending.
 async function fetchCloses(ticker) {
   const key = ticker.toUpperCase();
   const hit = priceCache.get(key);
   if (hit && Date.now() - hit.ts < 3_600_000) return hit.data; // cache hit
 
-  const period2 = new Date(); // End date - today
-  const period1 = new Date(); // start date - 2 years from today
+  const period2 = new Date();
+  const period1 = new Date();
   period1.setFullYear(period1.getFullYear() - 2);
 
   // the actual API-call
   let quotes;
   try {
-    quotes = await yahooFinance.historical(key, {
+    const result = await yahooFinance.chart(key, {
       period1,
       period2,
       interval: '1d'
     });
+    quotes = result.quotes;
   } catch (err) {
     // Yahoo Finance returns HTTP 429 when rate-limited — surface it with a clear message
     if (err.message?.includes('429') || err.statusCode === 429) {
@@ -85,13 +86,13 @@ async function fetchCloses(ticker) {
   }
 
   // min. data requirements for rho (pearson function)
-  const valid = quotes.filter(q => q.close !== null); 
+  const valid = quotes.filter(q => q.adjclose != null); 
   if (valid.length < 3) throw new Error(`Not enough price data for ${key}`);// looping over every stock quotes, and filtering for null. 
 
 
   const dates = valid.map(q => q.date.toISOString().split('T')[0]); //gets the date without the time (splits at T). e.g. "2024-04-03T00:00:00.000Z"
-  const closes = valid.map(q => q.close);
-  const data = { dates, closes }; 
+  const adjcloses = valid.map(q => q.adjclose);
+  const data = { dates, adjcloses }; 
   priceCache.set(key, { ts: Date.now(), data }); 
   return data;
 }
@@ -99,29 +100,29 @@ async function fetchCloses(ticker) {
 
 // Intersects trading dates across any number of tickers so calculations run on the same days.
 // Used for pairwise correlations (2 tickers) and portfolio volatility (all tickers).
-// Returns { [ticker]: closes[] } aligned to common dates only.
+// Returns { [ticker]: adjcloses[] } aligned to common dates only.
 function alignPrices(priceMap) {
   const tickers = Object.keys(priceMap); //ticker names from the input priceMap
   const sets = tickers.map(t => new Set(priceMap[t].dates)); //fast, removes duplicates and unsorted (finds every useful dates), converts it into a =(1).has() lookups (Prepares filterquery - Power Automate) in a new array.
   const common = [...sets[0]].filter(d => sets.every(s => s.has(d))).sort(); //finds the dates where all tickers has the same value (open market days)
   const aligned = {};
   for (const t of tickers) {
-    const lookup = Object.fromEntries(priceMap[t].dates.map((d, i) => [d, priceMap[t].closes[i]])); //Potential output[["2025-01-02", 182.5], ["2025-01-03", 199.6]] - finds date and close price for each ticker.
-    aligned[t] = common.map(d => lookup[d]); //creates arrray with all the close prices that is in the common (where both tickers are open.)
+    const lookup = Object.fromEntries(priceMap[t].dates.map((d, i) => [d, priceMap[t].adjcloses[i]])); //Potential output[["2025-01-02", 182.5], ["2025-01-03", 199.6]] - finds date and adjclose price for each ticker.
+    aligned[t] = common.map(d => lookup[d]); //creates arrray with all the adjclose prices that is in the common (where both tickers are open.)
   }
-  return aligned; // returns both tickers close prices.
+  return aligned; // returns both tickers adjclose prices.
 }
 
-function toReturns(closes) {
+function toReturns(adjcloses) {
   const r = [];
-  for (let i = 1; i < closes.length; i++) r.push((closes[i] - closes[i - 1]) / closes[i - 1]);
+  for (let i = 1; i < adjcloses.length; i++) r.push((adjcloses[i] - adjcloses[i - 1]) / adjcloses[i - 1]);
   return r;
 }
 
 // Computes Pearson correlation coefficient between two price series.
-// Converts closes to daily returns first (% change), then correlates.
+// Converts adjcloses to daily returns first (% change), then correlates.
 // Returns a value in [-1, 1] rounded to 2 decimal places, or null if too few points.
-function pearson(a, b) { //input close price for each ticker - a = [170.00, 172.50, 171.00, 174.00, 173.50]
+function pearson(a, b) { //input adjclose price for each ticker - a = [170.00, 172.50, 171.00, 174.00, 173.50]
   const n = Math.min(a.length, b.length);
   if (n < 3) return null; //minimum amount for calculating rho-value.
   const ra = toReturns(a.slice(0, n));
@@ -143,13 +144,13 @@ function pearson(a, b) { //input close price for each ticker - a = [170.00, 172.
 }
 
 
-// Computes annualised volatility (σ) from a closes array.
+// Computes annualised volatility (σ) from a adjcloses array.
 // Formula: stddev of daily returns × √252 (trading days per year), expressed as %.
 // This is the standard measure of a stock's price risk.
-function volatility(closes) {
-  const n = closes.length; 
+function volatility(adjcloses) {
+  const n = adjcloses.length; 
   if (n < 3) return null; // minimum amount for calculating volatility-value.
-  const returns = toReturns(closes);
+  const returns = toReturns(adjcloses);
   const mean = returns.reduce((s, v) => s + v, 0) / returns.length;
   const variance = returns.reduce((s, v) => s + (v - mean) ** 2, 0) / (returns.length - 1);
 
@@ -237,7 +238,7 @@ app.get('/search', async (req, res) => {
 });
 
 // ── GET /correlate ──
-// Fetches 24 months of closes for two tickers, computes Pearson rho,
+// Fetches 24 months of adjcloses for two tickers, computes Pearson rho,
 // then asks gpt-4o-mini for a 1-2 sentence plain-English explanation.
 // Query params: ?a=AAPL&b=TSLA
 app.get('/correlate', async (req, res) => {
@@ -247,12 +248,12 @@ app.get('/correlate', async (req, res) => {
 
   let dataA, dataB;
   try {
-    [dataA, dataB] = await Promise.all([fetchCloses(a), fetchCloses(b)]); // gets close prices for each ticker
+    [dataA, dataB] = await Promise.all([fetchCloses(a), fetchCloses(b)]); // gets adjclose prices for each ticker
   } catch (err) {
     return res.status(err.statusCode || 400).json({ error: err.message }); 
   }
 
-  const aligned = alignPrices({ [a]: dataA, [b]: dataB }); // sends the close prices for each ticker to the alignPrices for it to run the function and stored in the variable.
+  const aligned = alignPrices({ [a]: dataA, [b]: dataB }); // sends the adjclose prices for each ticker to the alignPrices for it to run the function and stored in the variable.
   const rho = pearson(aligned[a], aligned[b]); 
   if (rho === null) return res.status(400).json({ error: 'Not enough overlapping price data' });
   const level = corrLevel(rho); 
@@ -394,7 +395,7 @@ app.post('/analyze', async (req, res) => {
     const key = p.ticker.toUpperCase();
     if (priceResults[i].status === 'fulfilled') {
       priceMap[key] = priceResults[i].value;
-      const vol = volatility(priceResults[i].value.closes);
+      const vol = volatility(priceResults[i].value.adjcloses);
       if (vol !== null) volMap[key] = vol;
     } else {
       const err = priceResults[i].reason;
