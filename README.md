@@ -8,7 +8,7 @@ LLM-powered portfolio analysis tool that takes a set of stock positions, fetches
 
 ## Why I built this
 
-Built as part of a Founder's Associate application at Performativ. I used it as an opportunity to go hands-on with LLM integration in a real-world context — combining live market data with structured model output to produce something actually useful.
+Built as part of a Founder's Associate application at Performativ. I used it as an opportunity to go hands-on with LLM integration in a real-world context, combining live market data with structured model output to produce something actually useful.
 
 ---
 
@@ -24,9 +24,9 @@ Built as part of a Founder's Associate application at Performativ. I used it as 
 
 ## Tech decisions worth noting
 
-- **No framework or bundler** — the scope didn't justify the overhead. Vanilla JS and a single Express server keeps the whole project readable in one sitting.
-- **OpenAI function calling for structured output** — the entire response shape is defined as a JSON Schema, so field types and allowed values are enforced at the API level rather than through prompt instructions or post-processing. The model can't return a risk or correlation level that isn't in the schema.
-- **Server-side metric computation, LLM for narrative only** — volatility, correlations, sector weights, and overall risk level are all computed from real data. The model only writes the text. This separation makes the output auditable.
-- **Yahoo Finance with a 1-hour in-memory cache** — avoids redundant API calls during a session without needing a database.
+- **No framework or bundler** the scope didn't justify the overhead. Vanilla JS and a single Express server keeps the whole project readable in one sitting.
+- **OpenAI function calling for structured output** the entire response shape is defined as a JSON Schema, so field types and allowed values are enforced at the API level rather than through prompt instructions or post-processing. The model can't return a risk or correlation level that isn't in the schema.
+- **Server-side metric computation, LLM for narrative only** volatility, correlations, sector weights, and overall risk level are all computed from real data. The model only writes the text. This separation makes the output auditable.
+- **Yahoo Finance with a 1-hour in-memory cache** avoids redundant API calls during a session without needing a database.
 
 
